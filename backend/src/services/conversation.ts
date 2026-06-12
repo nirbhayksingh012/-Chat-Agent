@@ -1,6 +1,8 @@
-import { Database } from "sql.js";
+import { db } from "../db/migrate";
+import { conversations, messages } from "../db/schema";
+import { eq, asc } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import { saveDb } from "../db/migrate";
+import { redisClient } from "../db/redis";
 import type { ChatMessage } from "./llm";
 
 export interface Message {
@@ -18,75 +20,135 @@ export interface Conversation {
   metadata: string | null;
 }
 
-function queryFirst<T>(db: Database, sql: string, params: (string | number | null)[]): T | undefined {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as unknown as T;
-    stmt.free();
-    return row;
-  }
-  stmt.free();
-  return undefined;
-}
-
-function queryAll<T>(db: Database, sql: string, params: (string | number | null)[]): T[] {
-  const result = db.exec(sql.replace(/\?/g, () => {
-    const p = params.shift();
-    if (p === null) return "NULL";
-    if (typeof p === "number") return String(p);
-    return `'${String(p).replace(/'/g, "''")}'`;
-  }));
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map(row => {
-    const obj: Record<string, unknown> = {};
-    columns.forEach((col, i) => { obj[col] = row[i]; });
-    return obj as unknown as T;
-  });
-}
-
-export function getOrCreateConversation(db: Database, sessionId?: string): Conversation {
+export async function getOrCreateConversation(sessionId?: string): Promise<Conversation> {
   if (sessionId) {
-    const existing = queryFirst<Conversation>(
-      db,
-      "SELECT id, created_at, updated_at, metadata FROM conversations WHERE id = ?",
-      [sessionId]
-    );
+    const existing = await getConversation(sessionId);
     if (existing) return existing;
   }
 
   const id = sessionId || uuidv4();
   const now = Math.floor(Date.now() / 1000);
-  db.run("INSERT INTO conversations (id, created_at, updated_at) VALUES (?, ?, ?)", [id, now, now]);
-  saveDb(db);
-  return { id, created_at: now, updated_at: now, metadata: null };
+  
+  await db.insert(conversations).values({
+    id,
+    createdAt: now,
+    updatedAt: now,
+    metadata: null
+  });
+
+  const conversation = { id, created_at: now, updated_at: now, metadata: null };
+
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.setEx(`chat:session:${id}`, 3600, JSON.stringify(conversation));
+    } catch (err) {
+      console.warn("[Redis Cache Error] Failed to set conversation cache:", err);
+    }
+  }
+
+  return conversation;
 }
 
-export function saveMessage(db: Database, conversationId: string, sender: "user" | "ai", text: string): Message {
+export async function saveMessage(conversationId: string, sender: "user" | "ai", text: string): Promise<Message> {
   const id = uuidv4();
   const now = Math.floor(Date.now() / 1000);
-  db.run("INSERT INTO messages (id, conversation_id, sender, text, created_at) VALUES (?, ?, ?, ?, ?)",
-    [id, conversationId, sender, text, now]);
-  db.run("UPDATE conversations SET updated_at = ? WHERE id = ?", [now, conversationId]);
-  saveDb(db);
+
+  await db.insert(messages).values({
+    id,
+    conversationId,
+    sender,
+    text,
+    createdAt: now
+  });
+
+  await db.update(conversations)
+    .set({ updatedAt: now })
+    .where(eq(conversations.id, conversationId));
+
+  // Invalidate Redis caches
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.del(`chat:history:${conversationId}`);
+      await redisClient.del(`chat:session:${conversationId}`);
+    } catch (err) {
+      console.warn("[Redis Cache Error] Failed to invalidate cache:", err);
+    }
+  }
+
   return { id, conversation_id: conversationId, sender, text, created_at: now };
 }
 
-export function getConversationHistory(db: Database, conversationId: string): Message[] {
-  return queryAll<Message>(
-    db,
-    "SELECT id, conversation_id, sender, text, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
-    [conversationId]
-  );
+export async function getConversationHistory(conversationId: string): Promise<Message[]> {
+  const cacheKey = `chat:history:${conversationId}`;
+
+  if (redisClient.isOpen) {
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      console.warn("[Redis Cache Error] Failed to read conversation history cache:", err);
+    }
+  }
+
+  const rows = await db.select()
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(asc(messages.createdAt));
+
+  const history = rows.map(r => ({
+    id: r.id,
+    conversation_id: r.conversationId,
+    sender: r.sender as "user" | "ai",
+    text: r.text,
+    created_at: r.createdAt
+  }));
+
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.setEx(cacheKey, 3600, JSON.stringify(history));
+    } catch (err) {
+      console.warn("[Redis Cache Error] Failed to cache conversation history:", err);
+    }
+  }
+
+  return history;
 }
 
-export function getConversation(db: Database, id: string): Conversation | undefined {
-  return queryFirst<Conversation>(
-    db,
-    "SELECT id, created_at, updated_at, metadata FROM conversations WHERE id = ?",
-    [id]
-  );
+export async function getConversation(id: string): Promise<Conversation | undefined> {
+  const cacheKey = `chat:session:${id}`;
+
+  if (redisClient.isOpen) {
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      console.warn("[Redis Cache Error] Failed to read conversation cache:", err);
+    }
+  }
+
+  const rows = await db.select().from(conversations).where(eq(conversations.id, id)).limit(1);
+  if (rows.length === 0) return undefined;
+
+  const conversation = {
+    id: rows[0].id,
+    created_at: rows[0].createdAt,
+    updated_at: rows[0].updatedAt,
+    metadata: rows[0].metadata
+  };
+
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.setEx(cacheKey, 3600, JSON.stringify(conversation));
+    } catch (err) {
+      console.warn("[Redis Cache Error] Failed to cache conversation session:", err);
+    }
+  }
+
+  return conversation;
 }
 
 export function buildLlmHistory(messages: Message[]): ChatMessage[] {

@@ -1,16 +1,6 @@
-export interface Message {
-  id: string;
-  sender: "user" | "ai";
-  text: string;
-  created_at: number;
-}
-
 const BASE = import.meta.env.VITE_API_URL || "";
 
-export async function sendMessage(
-  message: string,
-  sessionId: string | null
-): Promise<{ reply: string; sessionId: string }> {
+export async function sendMessage(message, sessionId) {
   const res = await fetch(`${BASE}/chat/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -25,9 +15,7 @@ export async function sendMessage(
   return res.json();
 }
 
-export async function loadHistory(
-  sessionId: string
-): Promise<{ sessionId: string; messages: Message[] }> {
+export async function loadHistory(sessionId) {
   const res = await fetch(`${BASE}/chat/history/${sessionId}`);
   if (!res.ok) throw new Error("Could not load history");
   return res.json();

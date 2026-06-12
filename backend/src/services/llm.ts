@@ -29,7 +29,6 @@ export async function generateReply(
       ? userMessage.slice(0, MAX_INPUT_CHARS) + "… [message truncated]"
       : userMessage;
 
-  // Keep only the last N messages to control token usage
   const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
 
   const contents = [
@@ -41,7 +40,6 @@ export async function generateReply(
   ];
 
   try {
-    // Attempt with primary model (gemini-2.5-flash)
     const response = await getAiClient().models.generateContent({
       model: "gemini-2.5-flash",
       contents,
@@ -58,7 +56,6 @@ export async function generateReply(
       `[LLM Warning] gemini-2.5-flash failed (attempting fallback to gemini-3.5-flash). Error: ${err?.message || err}`
     );
 
-    // Fallback with stable model (gemini-3.5-flash)
     const response = await getAiClient().models.generateContent({
       model: "gemini-3.5-flash",
       contents,
@@ -74,4 +71,3 @@ export async function generateReply(
 
   throw new Error("Unexpected response format from Gemini: No text returned");
 }
-

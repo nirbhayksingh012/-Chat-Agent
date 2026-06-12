@@ -1,45 +1,33 @@
-import initSqlJs, { Database } from "sql.js";
-import path from "path";
-import fs from "fs";
+import { Pool } from "pg";
+import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "./schema";
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "data", "chat.db");
+const connectionString = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/spurchat";
 
-let _db: Database | null = null;
+let _pool: Pool | null = null;
+export let db: NodePgDatabase<typeof schema>;
 
-export async function getDb(): Promise<Database> {
-  if (_db) return _db;
+export async function getDb(): Promise<Pool> {
+  if (_pool) return _pool;
 
-  const SQL = await initSqlJs();
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  _pool = new Pool({ connectionString });
+  db = drizzle(_pool, { schema });
 
-  if (fs.existsSync(DB_PATH)) {
-    const buf = fs.readFileSync(DB_PATH);
-    _db = new SQL.Database(buf);
-  } else {
-    _db = new SQL.Database();
-  }
-
-  return _db;
+  return _pool;
 }
 
-export function saveDb(db: Database): void {
-  const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
-}
-
-export function runMigrations(db: Database): void {
-  db.run(`
+export async function runMigrations(pool: Pool): Promise<void> {
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
-      id          TEXT PRIMARY KEY,
+      id          UUID PRIMARY KEY,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL,
       metadata    TEXT
     );
 
     CREATE TABLE IF NOT EXISTS messages (
-      id              TEXT PRIMARY KEY,
-      conversation_id TEXT NOT NULL,
+      id              UUID PRIMARY KEY,
+      conversation_id UUID NOT NULL,
       sender          TEXT NOT NULL,
       text            TEXT NOT NULL,
       created_at      INTEGER NOT NULL,
@@ -49,6 +37,5 @@ export function runMigrations(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_messages_conv
       ON messages(conversation_id, created_at);
   `);
-  saveDb(db);
-  console.log("✅ Migrations complete.");
+  console.log("✅ PostgreSQL Migrations complete.");
 }

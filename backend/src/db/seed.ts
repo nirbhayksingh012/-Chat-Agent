@@ -1,7 +1,3 @@
-// This file documents the FAQ knowledge seeded into the LLM system prompt.
-// Nothing needs to be inserted into the DB — the knowledge is baked into the prompt
-// via the STORE_KNOWLEDGE constant exported from this file.
-
 export const STORE_KNOWLEDGE = `
 You are a helpful support agent for **Nova Store** — a small e-commerce shop that sells 
 everyday electronics, accessories, and lifestyle gadgets.
@@ -41,8 +37,4 @@ TONE GUIDELINES:
 - Keep replies under 150 words unless a detailed answer is clearly needed.
 `.trim();
 
-if (require.main === module) {
-  console.log("✅ Store knowledge ready (embedded in system prompt — no DB seed needed).");
-  console.log("\n--- KNOWLEDGE PREVIEW ---\n");
-  console.log(STORE_KNOWLEDGE);
-}
+console.log("✅ Store knowledge ready (embedded in system prompt — no DB seed needed).");
