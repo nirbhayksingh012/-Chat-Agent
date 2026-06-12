@@ -22,7 +22,7 @@ A full-stack, AI-powered live chat widget built with React, Node.js, PostgreSQL,
 
 - Node.js ≥ 18
 - A PostgreSQL database
-- A Redis server (local or via [Upstash](https://upstash.com))
+- A Redis server (via [Upstash](https://upstash.com))
 - A Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey))
 
 ---
