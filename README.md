@@ -1,6 +1,6 @@
 # Spur Chat — AI Support Agent
 
-A full-stack, AI-powered live chat widget for a fictional e-commerce store (**Nova Store**), built as a take-home assignment for Spur.
+A full-stack, AI-powered live chat widget (**Chat Agent**), built as a take-home assignment for Spur.
 
 ---
 
@@ -133,6 +133,6 @@ spur-chat/
 
 * **Provider:** **Google Gemini** (`gemini-2.5-flash` as primary, falling back to `gemini-3.5-flash` if rate limited or interrupted).
 * **Prompting Strategy:**
-  * System prompts are loaded from [seed.ts](file:///d:/nirbhay/spur-chat/backend/src/db/seed.ts) (`STORE_KNOWLEDGE`). It explicitly instructs the model on Nova Store's shipping fees, return window (30 days), payments, support contacts, and tone expectations (friendly, concise, under 150 words).
+  * System prompts are loaded from [seed.ts](file:///d:/nirbhay/spur-chat/backend/src/db/seed.ts) (`STORE_KNOWLEDGE`). It explicitly instructs the model on Chat Agent's shipping fees, return window (30 days), payments, support contacts, and tone expectations (friendly, concise, under 150 words).
   * **History Window:** Fetches the last 20 messages (~10 turns of conversation) from the database and forwards it to Gemini with every new user message to provide full context.
 * **Error Handling:** If Gemini throws an exception (e.g. key expiry or API failure), a friendly fallback banner is sent to the client and saved in PostgreSQL, maintaining the session's chat history flow.

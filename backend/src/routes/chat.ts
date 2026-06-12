@@ -42,7 +42,7 @@ export function createChatRouter(): Router {
     } catch (err: any) {
       console.error("[LLM Error]", err);
       const friendlyMessage =
-        "Our AI agent is temporarily unavailable. Please try again in a moment or contact support@novastore.example.";
+        "Our AI agent is temporarily unavailable. Please try again in a moment or contact support@chatagent.example.";
       await saveMessage(conversation.id, "ai", friendlyMessage);
       res.status(200).json({ reply: friendlyMessage, sessionId: conversation.id });
       return;
