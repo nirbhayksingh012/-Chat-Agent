@@ -37,5 +37,4 @@ export async function runMigrations(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_messages_conv
       ON messages(conversation_id, created_at);
   `);
-  console.log("✅ PostgreSQL Migrations complete.");
 }

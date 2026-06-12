@@ -34,7 +34,7 @@ async function main() {
   });
 
   const server = app.listen(PORT, () => {
-    console.log(`🚀 Spur Chat backend running on http://localhost:${PORT}`);
+    console.log(`Chat Agent backend running on http://localhost:${PORT}`);
   });
 
   const shutdown = async () => {

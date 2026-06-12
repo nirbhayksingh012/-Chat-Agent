@@ -36,4 +36,3 @@ TONE GUIDELINES:
 - Keep replies under 150 words unless a detailed answer is clearly needed.
 `.trim();
 
-console.log("✅ Store knowledge ready (embedded in system prompt — no DB seed needed).");
