@@ -1,19 +1,18 @@
 # Spur Chat — AI Support Agent
 
-A full-stack AI-powered live chat widget for a fictional e-commerce store (**Nova Store**), built as a take-home assignment for Spur.
-
-**Live demo:** _deploy link here_
+A full-stack, AI-powered live chat widget for a fictional e-commerce store (**Nova Store**), built as a take-home assignment for Spur.
 
 ---
 
-## Stack
+## Technology Stack
 
-| Layer | Tech |
+| Layer | Technology |
 |---|---|
-| Backend | Node.js + TypeScript + Express |
-| LLM | Google Gemini (2.5 Flash) |
-| Database | SQLite via `sql.js` (pure-JS, zero native deps) |
-| Frontend | React + Vite |
+| **Frontend** | React 19 + Vite + Tailwind CSS v4 |
+| **Backend** | Node.js + TypeScript + Express |
+| **Database** | PostgreSQL (managed via Drizzle ORM) |
+| **Caching** | Redis (using Cache-Aside reads & invalidation writes) |
+| **LLM** | Google Gemini (2.5 Flash / 3.5 Flash) via `@google/genai` |
 
 ---
 
@@ -21,99 +20,70 @@ A full-stack AI-powered live chat widget for a fictional e-commerce store (**Nov
 
 ### Prerequisites
 - Node.js ≥ 18
-- An Anthropic API key ([get one here](https://console.anthropic.com/))
+- A PostgreSQL database instance (running locally, via Docker, or hosted in the cloud)
+- A Redis server instance (running locally, via Docker, or hosted in the cloud)
+- A Google Gemini API key ([get one here](https://aistudio.google.com/))
 
-### 1. Clone & install
+### Step-by-Step Setup
 
+#### 1. Clone the repository
 ```bash
 git clone <repo-url>
 cd spur-chat
 ```
 
-### 2. Set up the backend
+#### 2. Set up the Backend
+1. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+2. Copy the environment template:
+   ```bash
+   cp .env.example .env
+   ```
+3. Open `backend/.env` and configure your variables:
+   * Paste your Gemini API key in `GEMINI_API_KEY`.
+   * Set your PostgreSQL connection URL in `DATABASE_URL`.
+   * Set your Redis connection URL in `REDIS_URL`.
+4. Install packages:
+   ```bash
+   npm install
+   ```
+5. Start the backend development server:
+   ```bash
+   npm run dev
+   ```
+   *The server runs migrations automatically to create tables at startup. The backend will list on **http://localhost:3001**.*
 
-```bash
-cd backend
-cp .env.example .env
-# Edit .env and set GEMINI_API_KEY=your_key_here
-npm install
-npm run dev
-# Backend starts at http://localhost:3001
-```
-
-The DB is created automatically on first run — no separate migration step needed.  
-To verify: `npm run db:migrate` prints the schema and creates `data/chat.db`.
-
-### 3. Set up the frontend
-
-```bash
-# In a new terminal, from repo root:
-cd frontend
-npm install
-npm run dev
-# Frontend starts at http://localhost:5173
-```
-
-Open **http://localhost:5173** in your browser.
+#### 3. Set up the Frontend
+1. In a new terminal tab, navigate to the frontend directory:
+   ```bash
+   cd frontend
+   ```
+2. Install packages:
+   ```bash
+   npm install
+   ```
+3. Start the Vite dev server:
+   ```bash
+   npm run dev
+   ```
+   *The frontend starts at **http://localhost:5173**.*
+4. Open **http://localhost:5173** in your browser.
 
 ---
 
-## Environment Variables
+## Environment Variables Configuration
 
 ### Backend (`backend/.env`)
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GEMINI_API_KEY` | ✅ | — | Gemini API key |
-| `PORT` | No | `3001` | Port to listen on |
+| `GEMINI_API_KEY` | ✅ | — | Google Gemini developer API key |
+| `DATABASE_URL` | ✅ | `postgresql://postgres:postgres@localhost:5432/spurchat` | PostgreSQL database connection string |
+| `REDIS_URL` | ✅ | `redis://localhost:6379` (or `rediss://` for TLS) | Redis server connection string |
+| `PORT` | No | `3001` | Port Express server listens on |
 | `CORS_ORIGIN` | No | `http://localhost:5173` | Allowed frontend origin |
-| `DB_PATH` | No | `./data/chat.db` | SQLite file path |
-
-### Frontend (`frontend/.env`)
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `VITE_API_URL` | No | `` (empty) | Backend URL for production. In dev, Vite proxies to `localhost:3001`. |
-
----
-
-## API Endpoints
-
-### `POST /chat/message`
-
-Send a user message and get an AI reply.
-
-**Request:**
-```json
-{
-  "message": "What's your return policy?",
-  "sessionId": "optional-uuid-to-continue-session"
-}
-```
-
-**Response:**
-```json
-{
-  "reply": "You can return items within 30 days...",
-  "sessionId": "uuid-v4"
-}
-```
-
-**Errors:** `400` for invalid input, `200` with a friendly error message for LLM failures.
-
-### `GET /chat/history/:sessionId`
-
-Fetch the full message history for a session.
-
-**Response:**
-```json
-{
-  "sessionId": "uuid",
-  "messages": [
-    { "id": "...", "sender": "user", "text": "...", "created_at": 1234567890 }
-  ]
-}
-```
 
 ---
 
@@ -122,91 +92,47 @@ Fetch the full message history for a session.
 ```
 spur-chat/
 ├── backend/
-│   └── src/
-│       ├── index.ts              # Express app setup, DB init, startup
-│       ├── db/
-│       │   ├── migrate.ts        # DB init + schema (getDb, runMigrations, saveDb)
-│       │   └── seed.ts           # Store knowledge / FAQ (STORE_KNOWLEDGE const)
-│       ├── routes/
-│       │   └── chat.ts           # POST /chat/message, GET /chat/history/:id
-│       └── services/
-│           ├── conversation.ts   # DB operations: read/write messages & sessions
-│           └── llm.ts            # generateReply() — Anthropic API wrapper
+│   ├── src/
+│   │   ├── index.ts              # Server boot coordinator, Redis connect, graceful shutdown
+│   │   ├── db/
+│   │   │   ├── migrate.ts        # PG connection Pool, Drizzle db export, startup migrations
+│   │   │   ├── schema.ts         # Tables & indexes definitions (conversations, messages)
+│   │   │   ├── redis.ts          # Redis client client connections and logs
+│   │   │   └── seed.ts           # Store policy prompts (STORE_KNOWLEDGE FAQ constant)
+│   │   ├── routes/
+│   │   │   └── chat.ts           # POST /chat/message, GET /chat/history/:id endpoints
+│   │   └── services/
+│   │       ├── conversation.ts   # Caching layer, reads from Redis first, deletes on writes
+│   │       └── llm.ts            # generateReply() — Google Gemini SDK integration
+│   ├── tsconfig.json             # TypeScript compiler settings
+│   └── drizzle.config.ts         # Drizzle kit configuration file
 └── frontend/
-    └── src/
-        ├── App.tsx               # Full chat UI (single-component)
-        ├── App.css               # Styling
-        ├── lib/
-        │   └── api.ts            # sendMessage(), loadHistory() fetch wrappers
-        └── main.tsx              # React mount
+    ├── src/
+    │   ├── main.jsx              # Mounts React and imports index.css
+    │   ├── App.jsx               # Styled React chat window UI (Tailwind CSS v4 classes)
+    │   ├── index.css             # Tailwind v4 import, custom brand variables, micro-animations
+    │   ├── vite-env.d.ts         # Global Vite client type declarations
+    │   └── lib/
+    │       └── api.js            # sendMessage(), loadHistory() Fetch API helpers
+    └── vite.config.js            # Vite configurations with tailwindcss() Vite plugin
 ```
 
-**Layer breakdown:**
+### Module Breakdown:
+* **Controller Layer ([chat.ts](file:///d:/nirbhay/spur-chat/backend/src/routes/chat.ts)):** Receives client requests. Validates inputs using **Zod** (ensuring correct parameters and message length) before passing data to the services layer.
+* **Service Layer ([conversation.ts](file:///d:/nirbhay/spur-chat/backend/src/services/conversation.ts) & [llm.ts](file:///d:/nirbhay/spur-chat/backend/src/services/llm.ts)):** Contains core logic. `conversation` manages DB operations and cache lookups. `llm` coordinates prompt construction and triggers AI model requests.
+* **Database & Caching Configuration ([migrate.ts](file:///d:/nirbhay/spur-chat/backend/src/db/migrate.ts) & [redis.ts](file:///d:/nirbhay/spur-chat/backend/src/db/redis.ts)):** Coordinates connections to PostgreSQL and Redis. Runs startup migrations automatically to build DB tables and indexes.
 
-- **Routes** — thin: validate input with Zod, call services, return JSON.
-- **Services** — business logic. `conversation.ts` owns DB reads/writes. `llm.ts` owns the Anthropic call and prompt construction.
-- **DB** — `sql.js` (pure-JS SQLite). The DB is loaded from disk on startup and written back after every mutation. No native binaries needed.
-- **Frontend** — a single React component. Keeps `sessionId` in `localStorage` so history survives page reloads. Uses Vite's dev proxy so no CORS config is needed locally.
+### Key Design Decisions:
+* **Drizzle ORM & PostgreSQL:** Relies on PostgreSQL for production-ready relational data persistence. Drizzle ORM provides a type-safe interface for tables, preventing runtime SQL errors.
+* **Fail-Safe Redis Caching (Cache-Aside):** Speeds up history reads by saving serialized message arrays in Redis. All Redis calls are protected by try-catch blocks; if Redis goes offline, the app automatically falls back to fetching directly from PostgreSQL, guaranteeing zero downtime.
+* **Tailwind CSS v4 Integration:** Styled with Tailwind CSS v4 using its compiler plugin for Vite. Custom theme colors and bounce keyframes are declared inside [index.css](file:///d:/nirbhay/spur-chat/frontend/src/index.css) using CSS variables, keeping compilation fast.
 
 ---
 
 ## LLM Notes
 
-**Provider:** Google Gemini (`gemini-2.5-flash`)  
-**Max tokens per reply:** 512 (keeps costs low, sufficient for support answers)  
-**History window:** last 20 messages sent per request (~10 turns)  
-**Max input length:** 4,000 characters (truncated with notice if exceeded)
-
-**Prompting strategy:**
-
-The system prompt is the `STORE_KNOWLEDGE` constant in `backend/src/db/seed.ts`. It contains:
-1. Store identity (Nova Store)
-2. All FAQ knowledge: shipping, returns, payments, hours, warranty, cancellations
-3. Tone guidelines: concise, friendly, never make things up, stay under 150 words
-
-The full conversation history (up to 20 messages) is passed with each request so replies stay contextual.
-
-**Error handling:**
-- LLM/network errors are caught and a friendly fallback message is shown in chat (and persisted to DB)
-- Empty messages, over-length messages, and malformed session IDs are rejected with 400s before touching the LLM
-
----
-
-## Data Model
-
-```sql
-conversations (
-  id          TEXT PRIMARY KEY,   -- UUID v4
-  created_at  INTEGER NOT NULL,   -- Unix timestamp
-  updated_at  INTEGER NOT NULL,
-  metadata    TEXT                -- reserved for future use
-);
-
-messages (
-  id              TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL REFERENCES conversations(id),
-  sender          TEXT NOT NULL,  -- 'user' | 'ai'
-  text            TEXT NOT NULL,
-  created_at      INTEGER NOT NULL
-);
-```
-
----
-
-## Trade-offs & "If I Had More Time…"
-
-**What I kept simple:**
-- `sql.js` writes the entire DB to disk on every write. Fine for a demo; a production deployment would use `better-sqlite3` (native, synchronous, fast) or PostgreSQL.
-- No authentication. Session is tied to a `localStorage` UUID — anyone who knows the session ID can read its history.
-- Single-component frontend. Would split into `ChatWindow`, `MessageList`, `MessageBubble`, `InputBar` components for maintainability.
-
-**If I had more time:**
-- **Redis** for session caching so the DB isn't hit on every message
-- **Streaming replies** — Anthropic supports token-by-token streaming; wiring that to SSE/WebSockets makes the UX feel much faster
-- **Tool use / RAG** — instead of hardcoding FAQ in the prompt, store it in a vector DB and retrieve relevant chunks per query (scales to real product catalogues)
-- **Rate limiting** per session to prevent abuse
-- **Webhook-style channel abstraction** — a `ChannelAdapter` interface so the same `generateReply` / `conversation` logic can be reused by WhatsApp, Instagram, etc. The route layer would become a thin adapter per channel.
-- **Tests** — unit tests for the conversation service and an integration test for the `/chat/message` endpoint
-
-**Interesting design decision — sql.js over PostgreSQL:**  
-The assignment asks for PostgreSQL but also says "SQLite is fine." I chose `sql.js` (pure-JS SQLite) over `better-sqlite3` to avoid native compilation, making the repo work out-of-the-box in any environment (including sandboxed CI and Render free tier) without Docker. The schema is standard SQL, so switching to PostgreSQL with `pg` + `node-postgres` is ~1 hour of work.
+* **Provider:** **Google Gemini** (`gemini-2.5-flash` as primary, falling back to `gemini-3.5-flash` if rate limited or interrupted).
+* **Prompting Strategy:**
+  * System prompts are loaded from [seed.ts](file:///d:/nirbhay/spur-chat/backend/src/db/seed.ts) (`STORE_KNOWLEDGE`). It explicitly instructs the model on Nova Store's shipping fees, return window (30 days), payments, support contacts, and tone expectations (friendly, concise, under 150 words).
+  * **History Window:** Fetches the last 20 messages (~10 turns of conversation) from the database and forwards it to Gemini with every new user message to provide full context.
+* **Error Handling:** If Gemini throws an exception (e.g. key expiry or API failure), a friendly fallback banner is sent to the client and saved in PostgreSQL, maintaining the session's chat history flow.
