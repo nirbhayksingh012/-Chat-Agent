@@ -1,6 +1,6 @@
 # Chat Agent — AI Support Agent
 
-A full-stack, AI-powered live chat widget built with React, Node.js, PostgreSQL, Redis, and Google Gemini.
+A full-stack, AI-powered live chat widget built with React, Node.js, Neon PostgreSQL, Redis, and Google Gemini.
 
 ---
 
@@ -10,9 +10,23 @@ A full-stack, AI-powered live chat widget built with React, Node.js, PostgreSQL,
 |---|---|
 | **Frontend** | React 19 + Vite + Tailwind CSS v4 |
 | **Backend** | Node.js + TypeScript + Express |
-| **Database** | PostgreSQL (managed via Drizzle ORM) |
+| **Database** | Neon PostgreSQL (serverless, managed via Drizzle ORM) |
 | **Caching** | Redis (Cache-Aside pattern via Upstash) |
 | **LLM** | Google Gemini (`gemini-2.5-flash` / `gemini-3.5-flash`) |
+| **Frontend Hosting** | Vercel |
+| **Backend Hosting** | Render |
+
+---
+
+## Live Deployment
+
+The project is deployed across two platforms, each optimized for its role:
+
+- **Frontend** → [Vercel](https://vercel.com) — optimized for React/Vite static frontends, zero-config deploys, edge CDN out of the box.
+- **Backend** → [Render](https://render.com) — optimized for Node.js/Express servers, handles long-lived connections and background processes cleanly.
+- **Database** → [Neon](https://neon.tech) — serverless PostgreSQL, connects seamlessly from both Render (production) and local dev without any extra config.
+
+> **Why split platforms?** Vercel's serverless model isn't ideal for a persistent Express API, and Render isn't built for serving frontend assets. Letting each platform do what it's good at gives better performance and simpler configuration for both.
 
 ---
 
@@ -21,8 +35,8 @@ A full-stack, AI-powered live chat widget built with React, Node.js, PostgreSQL,
 ### Prerequisites
 
 - Node.js ≥ 18
-- A PostgreSQL database
-- A Redis server (via [Upstash](https://upstash.com))
+- A PostgreSQL database (local or [Neon](https://neon.tech) free tier)
+- A Redis server (local or [Upstash](https://upstash.com) free tier)
 - A Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey))
 
 ---
@@ -52,6 +66,8 @@ REDIS_URL=redis://localhost:6379
 PORT=3001
 CORS_ORIGIN=http://localhost:5173
 ```
+
+> Using Neon? Paste your Neon connection string directly into `DATABASE_URL`. It works the same as local PostgreSQL.
 
 Then install dependencies and start the dev server:
 
@@ -86,8 +102,8 @@ npm run dev
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GEMINI_API_KEY` | ✅ | — | Google Gemini developer API key |
-| `DATABASE_URL` | ✅ | `postgresql://postgres:postgres@localhost:5432/spurchat` | PostgreSQL connection string |
-| `REDIS_URL` | ✅ | `redis://localhost:6379` | Redis connection string (use `rediss://` for TLS) |
+| `DATABASE_URL` | ✅ | `postgresql://postgres:postgres@localhost:5432/spurchat` | PostgreSQL connection string (local or Neon) |
+| `REDIS_URL` | ✅ | `redis://localhost:6379` | Redis connection string (use `rediss://` for TLS/Upstash) |
 | `PORT` | No | `3001` | Port the Express server listens on |
 | `CORS_ORIGIN` | No | `http://localhost:5173` | Allowed frontend origin for CORS |
 
@@ -122,7 +138,7 @@ Chat-Agent/
 │   ├── src/
 │   │   ├── index.ts                  # Server entry point, Redis connect, graceful shutdown
 │   │   ├── db/
-│   │   │   ├── migrate.ts            # PostgreSQL pool, Drizzle db export, startup migrations
+│   │   │   ├── migrate.ts            # Neon/PostgreSQL pool, Drizzle db export, startup migrations
 │   │   │   ├── schema.ts             # Table & index definitions (conversations, messages)
 │   │   │   ├── redis.ts              # Redis client setup and connection logs
 │   │   │   └── seed.ts               # STORE_KNOWLEDGE FAQ constant for LLM system prompts
@@ -149,26 +165,32 @@ Chat-Agent/
 Receives HTTP requests from the client. Validates all inputs using **Zod** — enforcing correct types, required fields, and message length limits — before delegating to the service layer. This keeps validation centralized and out of business logic.
 
 **Service Layer (`conversation.ts` + `llm.ts`)**
-`conversation.ts` handles all data operations: reading from Redis first, falling back to PostgreSQL on cache miss, and invalidating the cache on new writes. `llm.ts` constructs the system prompt from `STORE_KNOWLEDGE`, attaches the last 20 messages as conversation history, and calls the Gemini SDK.
+`conversation.ts` handles all data operations: reading from Redis first, falling back to Neon PostgreSQL on cache miss, and invalidating the cache on new writes. `llm.ts` constructs the system prompt from `STORE_KNOWLEDGE`, attaches the last 20 messages as conversation history, and calls the Gemini SDK.
 
 **Database & Cache Layer (`migrate.ts` + `redis.ts`)**
-Manages PostgreSQL and Redis connections. Runs startup migrations to ensure the `conversations` and `messages` tables exist before the first request is served.
+Manages Neon PostgreSQL and Redis connections. Runs startup migrations to ensure the `conversations` and `messages` tables exist before the first request is served.
 
 ---
 
 ## Key Design Decisions
 
+**Neon PostgreSQL over local/self-hosted**
+Neon is serverless PostgreSQL — it connects instantly from both Render (production) and local dev with the same connection string, no infrastructure to manage. It also scales to zero when idle, which keeps costs low for a project like this.
+
 **Drizzle ORM over raw SQL**
-Drizzle provides a fully type-safe query interface, which eliminates a whole class of runtime SQL errors. It also makes schema changes explicit and version-controlled via migration files, rather than relying on ad-hoc SQL scripts.
+Drizzle provides a fully type-safe query interface, which eliminates a whole class of runtime SQL errors. Schema changes are explicit and version-controlled via migration files rather than ad-hoc SQL scripts.
 
 **Fail-Safe Redis Caching (Cache-Aside)**
 All Redis calls are wrapped in `try/catch`. If Redis goes offline, the app silently falls back to PostgreSQL for every read — users experience no downtime or errors, just slightly slower history loads. Cache entries are invalidated on every new message write to prevent stale reads.
 
 **Zod Input Validation**
-Rather than relying on implicit trust of client data, every API endpoint validates its inputs against a Zod schema at the boundary. This prevents malformed payloads from ever reaching the database or the LLM.
+Every API endpoint validates its inputs against a Zod schema at the boundary. This prevents malformed payloads from ever reaching the database or the LLM.
+
+**Split Deployment (Vercel + Render)**
+Rather than forcing everything onto one platform, the frontend lives on Vercel (optimized for static/React builds with edge CDN) and the backend on Render (optimized for persistent Node.js services). Each platform does what it's built for.
 
 **Tailwind CSS v4 with CSS Variables**
-Custom theme tokens (colors, spacing, animations) are declared directly in `index.css` using CSS custom properties. This keeps the design system co-located with the component styles, avoids a separate `tailwind.config.js`, and makes the build faster via the Vite compiler plugin.
+Custom theme tokens (colors, spacing, animations) are declared directly in `index.css` using CSS custom properties. This avoids a separate `tailwind.config.js` and makes the build faster via the Vite compiler plugin.
 
 ---
 
@@ -195,20 +217,17 @@ If Gemini throws an exception (expired key, quota exceeded, network timeout), a 
 
 ## Trade-offs & If I Had More Time
 
-**Session management is localStorage-only**
-Sessions are keyed by a UUID stored in `localStorage`. This is simple and stateless, but means sessions don't survive clearing browser storage or switching devices. A proper auth layer (even anonymous tokens via cookies) would fix this.
-
 **No streaming responses**
-Gemini supports streaming (`generateContentStream`), but the current implementation waits for the full reply before sending it to the client. Streaming would make the UI feel significantly faster for longer replies, and is the most impactful UX improvement left on the table.
+Gemini supports streaming (`generateContentStream`), but the current implementation waits for the full reply before sending it to the client. Streaming would make the UI feel significantly faster for longer replies — it's the most impactful UX improvement still on the table.
 
 **Fixed history window of 20 messages**
-The LLM receives the last 20 messages regardless of their length. For very long conversations, this could push against Gemini's context limit. A smarter approach would be token-counting the history and trimming from the oldest end to fit within a safe budget.
+The LLM receives the last 20 messages regardless of their length. For very long conversations, this could push against Gemini's context limit. A smarter approach would be token-counting the history and trimming from the oldest end to stay within a safe budget — using fewer tokens and reducing cost per request.
+
+**Session management is localStorage-only**
+Sessions are keyed by a UUID stored in `localStorage`. Simple and stateless, but sessions don't survive clearing browser storage or switching devices. A proper auth layer (even anonymous tokens via cookies) would fix this.
 
 **No rate limiting on the API**
-The `/chat/message` endpoint has no per-IP or per-session rate limiting. In production, this would need to be added (e.g. via `express-rate-limit` + Redis) to prevent abuse and protect the Gemini quota.
-
-**Single-region deployment assumption**
-Redis and PostgreSQL are assumed to be co-located with the backend. A multi-region setup would require thinking about cache invalidation across regions and read replicas for PostgreSQL.
+The `/chat/message` endpoint has no per-IP or per-session rate limiting. In production this would need `express-rate-limit` + Redis to prevent abuse and protect the Gemini quota.
 
 ---
 
